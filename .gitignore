@@ -1,0 +1,7 @@
+peer_files/
+torrents/
+venv/
+.vscode/
+__pycache__/
+*.torrent
+test.*
