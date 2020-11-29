@@ -2,6 +2,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from torrent_parser import to_torrent
 from piece_gen import pieces_gen
 
+PORT = 9000
+server_addr = ("localhost", PORT)
+
 tracker_url = "http://localhost:9200/tracker/announce"
 tracked_file = "./peer_files"
 torrent_fname = "BACCHUS.torrent"
@@ -30,9 +33,6 @@ class requestHandler(BaseHTTPRequestHandler):
 
 
 def run_server():
-
-    PORT = 9000
-    server_addr = ("localhost", PORT)
 
     server = HTTPServer(server_addr, requestHandler)
     print("[SERVIDOR] Servidor escuchando puerto %s" % PORT)
