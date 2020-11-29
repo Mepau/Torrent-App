@@ -32,12 +32,12 @@ class requestHandler(BaseHTTPRequestHandler):
             self.wfile.write(output)
 
 
-def run_server():
+if __name__ == "__main__":
 
     server = HTTPServer(server_addr, requestHandler)
     print("[SERVIDOR] Servidor escuchando puerto %s" % PORT)
-    server.serve_forever()
-
-
-if __name__ == "__main__":
-    run_server()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    print("[SERVIDOR] Servidor terminado")

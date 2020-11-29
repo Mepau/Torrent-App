@@ -3,9 +3,8 @@ import socket
 import hashlib
 import requests
 import bencodepy
-import pickle
 import uuid
-import sys
+import base64
 
 tracker_url = "http://localhost:9005/tracker/announce"
 torrent_file = "./torrents/BACCHUS.torrent"
@@ -15,26 +14,35 @@ peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 
 def tracker_req(id, hashed_torr, uploaded=None, downloaded=None, numwant=50):
-    
-    req = requests.get(
-        tracker_url,
-        params={
-            "info_hash": hashed_torr,
-            "peer_id": id,
-            "port": PORT,
-            "uploaded": uploaded,
-            "downloaded": downloaded,
-            "numwant": numwant,
-        },
-    )
-    
-    print(req)
+    try:
+        req = requests.get(
+            tracker_url,
+            params={
+                "info_hash": hashed_torr,
+                "peer_id": id,
+                "port": PORT,
+                "uploaded": uploaded,
+                "downloaded": downloaded,
+                "numwant": numwant,
+            },
+            verify=False,
+        )
+        print(req)
+    except requests.exceptions.RequestException as exc:
+        print(exc)
 
 
 # Funcion principal del thread inicial para llamadas XMLRPC desde y para otros nodos
-def run_client(id, hashed_torr):
+def run_client():
 
-    tracker_req(id, hashed_torr)
+    bencoder = bencodepy.Bencode()
+
+    bdencoded_torrent = bencoder.read(torrent_file)
+    bencoded_info = bencodepy.encode(bdencoded_torrent[b"info"])
+    hashed_bencode = hashlib.sha1(bencoded_info).digest()
+    client_id = "BACCHUS'S TORRCLIENT"
+
+    tracker_req(client_id,  base64.b64encode(hashed_bencode))
 
     # Socket que se esperan recibir data
     inputs = [peer_service]
@@ -63,18 +71,11 @@ def run_client(id, hashed_torr):
 
 if __name__ == "__main__":
 
-    bencoder = bencodepy.Bencode()
-
-    bencoded_torrent = bencoder.read(torrent_file)
-    serialized_bencode = pickle.dumps(bencoded_torrent[b"info"])
-    hashed_bencode = hashlib.sha1(serialized_bencode).digest()
-    client_id = b"".join([uuid.uuid4().bytes, b"0000"])
-
     peer_service.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     peer_service.setblocking(0)
     peer_service.bind(peer_addr)
     peer_service.listen(5)
 
-    run_client(client_id, hashed_bencode)
+    run_client()
 
     # hashed_info = hashlib.sha1(bencoded_torrent[b"info"])
