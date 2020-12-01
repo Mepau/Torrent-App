@@ -32,7 +32,7 @@ def flatten_list(nested_lists):
     return flat_list
 
 
-def to_torrent(filepath, tracker_url, stringed_hashes, piece_len=1048576):
+def to_torrent(filepath, tracker_url, stringed_hashes, piece_length):
     # En caso de que la ruta de archivo apunte a un directorio
     if os.path.isdir(filepath):
         files = os.listdir(filepath)
@@ -46,7 +46,7 @@ def to_torrent(filepath, tracker_url, stringed_hashes, piece_len=1048576):
                     "info": {
                         "files": [],
                         "name": os.path.basename(filepath),
-                        "piece length": piece_len,
+                        "piece length": piece_length,
                         "pieces": stringed_hashes,
                     },
                 }
@@ -61,7 +61,9 @@ def to_torrent(filepath, tracker_url, stringed_hashes, piece_len=1048576):
                         else:
                             print(f"Directorio {file_fpath} esta vacio")
                     elif os.path.isfile(file_fpath):
-                        files_dict["info"]["files"].append(files)
+                        files_dict["info"]["files"].append(
+                            {"path": file_fpath, "length": os.path.getsize(file_fpath)}
+                        )
 
                 flatten_files = flatten_list(files_dict["info"]["files"])
                 files_dict["info"]["files"] = []
@@ -84,7 +86,7 @@ def to_torrent(filepath, tracker_url, stringed_hashes, piece_len=1048576):
             "info": {
                 "length": os.path.getsize(filepath),
                 "name": os.path.basename(filepath),
-                "piece length": piece_len,
+                "piece length": piece_length,
                 "pieces": stringed_hashes,
             },
         }

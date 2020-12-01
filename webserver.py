@@ -1,19 +1,19 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from torrent_parser import to_torrent
-from piece_gen import pieces_gen
+from piece_gen import pieces_gen, DEF_PIECE_LENGTH
 
 PORT = 9000
-server_addr = ("localhost", PORT)
+SERVER_ADDR = ("localhost", PORT)
 
-tracker_url = "http://localhost:9200/tracker/announce"
+TRACKER_URL = "http://localhost:9005/tracker/announce"
 tracked_file = "./peer_files"
-torrent_fname = "BACCHUS.torrent"
+TORRENT_FNAME = "BACCHUS.torrent"
 
 
 class requestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
 
-        if self.path.endswith(f"/path_to/{torrent_fname}"):
+        if self.path.endswith(f"/path_to/{TORRENT_FNAME}"):
             self.send_response(200)
             self.send_header("content-type", "application/x-bittorrent")
             self.end_headers()
@@ -24,9 +24,11 @@ class requestHandler(BaseHTTPRequestHandler):
             for hash in pieces_hash:
                 stringed_hashes = b"".join([stringed_hashes, hash])
 
-            output = to_torrent(tracked_file, tracker_url, stringed_hashes)
+            output = to_torrent(
+                tracked_file, TRACKER_URL, stringed_hashes, DEF_PIECE_LENGTH
+            )
 
-            with open(f"./torrents/{torrent_fname}", "wb") as torrent:
+            with open(f"./torrents/{TORRENT_FNAME}", "wb") as torrent:
                 torrent.write(output)
 
             self.wfile.write(output)
@@ -34,7 +36,7 @@ class requestHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
 
-    server = HTTPServer(server_addr, requestHandler)
+    server = HTTPServer(SERVER_ADDR, requestHandler)
     print("[SERVIDOR] Servidor escuchando puerto %s" % PORT)
     try:
         server.serve_forever()

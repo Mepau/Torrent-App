@@ -5,59 +5,143 @@ import requests
 import bencodepy
 import uuid
 import base64
+import urllib.parse
+from torr_handshake import do_handshake, recv_handshake
+from constants import THIS_CLIENT_ID
 
-tracker_url = "http://localhost:9005/tracker/announce"
-torrent_file = "./torrents/BACCHUS.torrent"
 PORT = 9200
-peer_addr = ("localhost", PORT)
+PEER_ADDR = ("localhost", PORT)
+TORRENT_FILE = "./torrents/BACCHUS.torrent"
+# CLIENT_ID = "BACCHUS'S TORRCLIENT"
+# CLIENT_ID= "FSTSEEDER TORRCLIENT"
+CLIENT_ID = THIS_CLIENT_ID
 peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 
-def tracker_req(id, hashed_torr, uploaded=None, downloaded=None, numwant=50):
+def tracker_req(tracker_url, hashed_torr, uploaded=None, downloaded=None, numwant=50):
     try:
-        req = requests.get(
-            tracker_url,
-            params={
+        payload = urllib.parse.urlencode(
+            {
                 "info_hash": hashed_torr,
-                "peer_id": id,
+                "peer_id": CLIENT_ID,
                 "port": PORT,
                 "uploaded": uploaded,
                 "downloaded": downloaded,
                 "numwant": numwant,
-            },
-            verify=False,
+                "left": None,
+            }
         )
-        print(req)
+        req = requests.get(tracker_url, params=payload, verify=False)
+        res = bencodepy.decode(req.content)[b"peers"]
+        return res
     except requests.exceptions.RequestException as exc:
         print(exc)
 
 
-# Funcion principal del thread inicial para llamadas XMLRPC desde y para otros nodos
+def retrv_peers(tracker_url, info_hash, inputs, outputs, status_set):
+
+    encoded_hash = base64.b64encode(info_hash)
+    peers_list = tracker_req(tracker_url, encoded_hash)
+
+    if peers_list:
+        for peer in peers_list:
+            if peer[b"peer_id"].decode() not in status_set:
+                new_peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                new_peer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                # new_peer.setblocking(0)
+                peer_address = (peer[b"ip"].decode(), int(peer[b"port"].decode()))
+                try:
+                    new_peer.connect(peer_address)
+                    if do_handshake(info_hash, new_peer, peer[b"peer_id"]):
+                        inputs.append(new_peer)
+                        outputs.append(new_peer)
+                        status_set[peer[b"peer_id"].decode()] = {
+                            "am_choking": True,
+                            "am_interested": False,
+                            "peer_choking": True,
+                            "peer_interested": False,
+                            "address": peer_address,
+                        }
+                except socket.error as exc:
+                    print(exc)
+
+
 def run_client():
 
     bencoder = bencodepy.Bencode()
 
-    bdencoded_torrent = bencoder.read(torrent_file)
+    bdencoded_torrent = bencoder.read(TORRENT_FILE)
+
     bencoded_info = bencodepy.encode(bdencoded_torrent[b"info"])
     hashed_bencode = hashlib.sha1(bencoded_info).digest()
-    client_id = "BACCHUS'S TORRCLIENT"
 
-    tracker_req(client_id,  base64.b64encode(hashed_bencode))
+    pstatus_set = {}
 
     # Socket que se esperan recibir data
     inputs = [peer_service]
     # Lista con socket de los demas nodos
     outputs = []
 
+    retrv_peers(
+        bdencoded_torrent[b"announce"].decode(),
+        hashed_bencode,
+        inputs,
+        outputs,
+        pstatus_set,
+    )
     print("Starting nodes")
 
     while inputs:
+
         # Esperar por la llamada del SO cuando algun socket contenga data
         readable, writable, exceptional = select.select(inputs, outputs, inputs)
         for s in readable:
             if s is peer_service:
-                pass
-            pass
+                conn, addr = s.accept()
+                conn.settimeout(3)
+                try:
+                    peer_id = recv_handshake(hashed_bencode, conn)
+                    if peer_id:
+                        pstatus_set[peer_id] = {
+                            "am_choking": True,
+                            "am_interested": False,
+                            "peer_choking": True,
+                            "peer_interested": False,
+                            "address": addr,
+                        }
+                        conn.setblocking(0)
+                        inputs.append(conn)
+                        outputs.append(conn)
+                    else:
+                        conn.close()
+                except socket.error as e:
+                    print(e)
+            else:
+                try:
+                    data = s.recv(1024)
+                    if data:
+                        print(data)
+                    else:
+                        # Para casos en el que los clientes se desconecten
+                        if s in outputs:
+                            outputs.remove(s)
+                        inputs.remove(s)
+                        for peer in pstatus_set.items():
+                            if peer[1]["address"] == s.getpeername():
+                                pstatus_set.pop(peer[0])
+                                break
+                        s.close()
+
+                except socket.error:
+                    # Para casos en el que los clientes se desconecten
+                    if s in outputs:
+                        outputs.remove(s)
+                    inputs.remove(s)
+                    for peer in pstatus_set.items():
+                        if peer[1]["address"] == s.getpeername():
+                            pstatus_set.pop(peer[0])
+                            break
+                    s.close()
 
         for s in writable:
             pass
@@ -66,6 +150,10 @@ def run_client():
             inputs.remove(s)
             if s in outputs:
                 outputs.remove(s)
+            for peer in pstatus_set.items():
+                if peer[1]["address"] == s.getpeername():
+                    pstatus_set.pop(peer[0])
+                    break
             s.close()
 
 
@@ -73,9 +161,11 @@ if __name__ == "__main__":
 
     peer_service.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     peer_service.setblocking(0)
-    peer_service.bind(peer_addr)
+    peer_service.bind(PEER_ADDR)
     peer_service.listen(5)
 
-    run_client()
-
+    try:
+        run_client()
+    except KeyboardInterrupt:
+        print("[DOWNLOADER] Downloader terminado")
     # hashed_info = hashlib.sha1(bencoded_torrent[b"info"])

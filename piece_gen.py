@@ -2,8 +2,10 @@ import os
 import hashlib
 from torrent_parser import flatten_list, rread_dir
 
+DEF_PIECE_LENGTH = 524288
 
-def pieces_gen(fpath, piece_length=1048576):
+
+def pieces_gen(fpath, piece_length=DEF_PIECE_LENGTH):
     # Dividir multiples archivos en bloques/piezas
     pieces = []
     pieces_hash = []
