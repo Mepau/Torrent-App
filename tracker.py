@@ -14,10 +14,10 @@ TRACKER_ID = "BACCHUS ONLY TRACKER"
 ALLOWED_PEERS = 30
 INTERV_REQ = 30
 original_seeder = {
-                "peer_id": "FSTSEEDER TORRCLIENT",
-                "ip": "127.0.0.1",
-                "port": "9210",
-            }
+    "peer_id": "FSTSEEDER TORRCLIENT",
+    "ip": "127.0.0.1",
+    "port": "9210",
+}
 listed_peers = [original_seeder]
 tracking_file = ""
 

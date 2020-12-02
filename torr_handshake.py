@@ -63,7 +63,7 @@ def recv_handshake(info_hash, peer_client):
 
             peer_id = peer_client.recv(20)
             print(f"PEER ID {peer_id}")
-            return peer_id
+            return peer_id.decode()
 
         return False
     except socket.error as err:

@@ -4,6 +4,7 @@ import hashlib
 import requests
 import bencodepy
 import uuid
+import time
 import base64
 import urllib.parse
 from torr_handshake import do_handshake, recv_handshake
@@ -15,6 +16,7 @@ TORRENT_FILE = "./torrents/BACCHUS.torrent"
 # CLIENT_ID = "BACCHUS'S TORRCLIENT"
 # CLIENT_ID= "FSTSEEDER TORRCLIENT"
 CLIENT_ID = THIS_CLIENT_ID
+KEEP_ALIVE_TIME = 120
 peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 
@@ -60,7 +62,8 @@ def retrv_peers(tracker_url, info_hash, inputs, outputs, status_set):
                             "am_interested": False,
                             "peer_choking": True,
                             "peer_interested": False,
-                            "address": peer_address,
+                            "last_activity": time.time(),
+                            "socket": new_peer,
                         }
                 except socket.error as exc:
                     print(exc)
@@ -89,10 +92,10 @@ def run_client():
         outputs,
         pstatus_set,
     )
+
     print("Starting nodes")
 
     while inputs:
-
         # Esperar por la llamada del SO cuando algun socket contenga data
         readable, writable, exceptional = select.select(inputs, outputs, inputs)
         for s in readable:
@@ -107,8 +110,10 @@ def run_client():
                             "am_interested": False,
                             "peer_choking": True,
                             "peer_interested": False,
-                            "address": addr,
+                            "last_activity": time.time(),
+                            "socket": conn,
                         }
+
                         conn.setblocking(0)
                         inputs.append(conn)
                         outputs.append(conn)
@@ -127,22 +132,20 @@ def run_client():
                             outputs.remove(s)
                         inputs.remove(s)
                         for peer in pstatus_set.items():
-                            if peer[1]["address"] == s.getpeername():
+                            if peer[1]["socket"] == s:
                                 pstatus_set.pop(peer[0])
                                 break
                         s.close()
-
                 except socket.error:
                     # Para casos en el que los clientes se desconecten
                     if s in outputs:
                         outputs.remove(s)
                     inputs.remove(s)
                     for peer in pstatus_set.items():
-                        if peer[1]["address"] == s.getpeername():
+                        if peer[1]["socket"] == s:
                             pstatus_set.pop(peer[0])
                             break
                     s.close()
-
         for s in writable:
             pass
         # Casos de sockets con excepciones
@@ -151,10 +154,26 @@ def run_client():
             if s in outputs:
                 outputs.remove(s)
             for peer in pstatus_set.items():
-                if peer[1]["address"] == s.getpeername():
+                if peer[1]["socket"] == s:
                     pstatus_set.pop(peer[0])
                     break
             s.close()
+
+        curr_time = time.time()
+        for peer in list(pstatus_set.items()):
+            print(peer)
+            if curr_time >= peer[1]["last_activity"] + float(KEEP_ALIVE_TIME):
+                print(f"Timed out{peer[0]}")
+                inputs.remove(peer[1]["socket"])
+                if peer[1]["socket"] in outputs:
+                    outputs.remove(peer[1]["socket"])
+                del pstatus_set[peer[0]]
+                try:
+                    peer[1]["socket"].close()
+                except socket.error as err:
+                    print(err)
+        
+        print(pstatus_set)
 
 
 if __name__ == "__main__":
