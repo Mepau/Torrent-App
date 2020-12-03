@@ -41,7 +41,7 @@ def pieces_gen(fpath, piece_length=DEF_PIECE_LENGTH):
                     with open(file["path"], "rb") as open_file:
                         counter = 0
                         while counter < file["length"]:
-                            piece = open_file.read(file["length"])
+                            piece = open_file.read(piece_length)
                             pieces.append(piece)
                             # print(f"Nueva pieza {piece}")
                             pieces_hash.append(hashlib.sha1(piece).digest())
@@ -54,10 +54,20 @@ def pieces_gen(fpath, piece_length=DEF_PIECE_LENGTH):
 
         with open(fpath, "rb") as open_file:
             while counter < file_size:
-                piece = open_file.read(file_size)
+                piece = open_file.read(piece_length)
                 pieces.append(piece)
                 # print(f"Nueva pieza {piece}")
                 pieces_hash.append(hashlib.sha1(piece).digest())
                 counter += len(piece)
 
     return pieces, pieces_hash
+
+
+def gen_block(piece, start_offset, block_length=16384):
+
+    piece_length = len(piece)
+
+    if start_offset + block_length > piece_length:
+        return piece[start_offset:piece_length]
+    else:
+        return piece[start_offset : start_offset + block_length]

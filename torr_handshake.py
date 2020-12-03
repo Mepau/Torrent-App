@@ -30,9 +30,7 @@ def do_handshake(info_hash, peer_client, peer_id):
         )
         _, found_id = parse_handshake(peer_client.recv(68))
         if found_id:
-            print("DO HANDSHAKE FOUND ID")
             if found_id == peer_id:
-                print("DO HANDSHAKE MATCH")
                 peer_client.sendall(THIS_CLIENT_ID.encode())
                 return True
 
@@ -44,13 +42,9 @@ def do_handshake(info_hash, peer_client, peer_id):
 
 def recv_handshake(info_hash, peer_client):
     try:
-
-        
         found_ihash, _ = parse_handshake(peer_client.recv(68))
-        print(found_ihash,info_hash) 
 
         if found_ihash == info_hash:
-            print("RECV HANDSHAKE HASH MATCH")
             peer_client.sendall(
                 b"%bBitTorrent protocol%b%b%b"
                 % (
@@ -62,7 +56,6 @@ def recv_handshake(info_hash, peer_client):
             )
 
             peer_id = peer_client.recv(20)
-            print(f"PEER ID {peer_id}")
             return peer_id.decode()
 
         return False
