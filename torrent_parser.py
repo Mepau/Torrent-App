@@ -94,5 +94,37 @@ def to_torrent(filepath, tracker_url, stringed_hashes, piece_length):
         return bencodepy.encode(file_dict)
 
 
-def from_torrent():
-    pass
+def from_torrent(fpath):
+
+    bencoder = bencodepy.Bencode()
+    bdencoded_torrent = bencoder.read(fpath)
+
+    announce_url = bdencoded_torrent[b"announce"].decode()
+
+    single_file = bdencoded_torrent[b"info"].get(b"name")
+    multi_files = bdencoded_torrent[b"info"].get(b"files")
+    pieces_length = bdencoded_torrent[b"info"][b"piece length"]
+    pieces_hash = bdencoded_torrent[b"info"][b"pieces"]
+    pieces_amount = len(pieces_hash) // 20
+    bencoded_info = bencodepy.encode(bdencoded_torrent[b"info"])
+
+    if single_file and not multi_files:
+        return (
+            announce_url,
+            single_file,
+            None,
+            pieces_length,
+            pieces_amount,
+            pieces_hash,
+            bencoded_info,
+        )
+    elif multi_files:
+        return (
+            announce_url,
+            single_file,
+            multi_files,
+            pieces_length,
+            pieces_amount,
+            pieces_hash,
+            bencoded_info,
+        )

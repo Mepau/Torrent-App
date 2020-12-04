@@ -6,7 +6,7 @@ PORT = 9000
 SERVER_ADDR = ("localhost", PORT)
 
 TRACKER_URL = "http://localhost:9005/tracker/announce"
-tracked_file = "./peer_files"
+tracked_file = "./peer_files/directory1"
 TORRENT_FNAME = "BACCHUS.torrent"
 
 

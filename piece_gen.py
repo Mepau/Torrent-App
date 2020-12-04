@@ -71,3 +71,17 @@ def gen_block(piece, start_offset, block_length=16384):
         return piece[start_offset:piece_length]
     else:
         return piece[start_offset : start_offset + block_length]
+
+
+def piece_toblocks(piece, block_length=16384):
+
+    blocks = [
+        {
+            "block_start": x - block_length,
+            "block": piece[x - block_length : x],
+        }
+        for x in range(len(piece))
+        if x % block_length == 0
+    ]
+
+    return blocks

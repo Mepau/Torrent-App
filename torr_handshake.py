@@ -1,5 +1,6 @@
 from constants import THIS_CLIENT_ID
 import socket
+from bitarray import bitarray
 
 
 def parse_handshake(str_hshake):
@@ -17,7 +18,7 @@ def parse_handshake(str_hshake):
     return False
 
 
-def do_handshake(info_hash, peer_client, peer_id):
+def do_handshake(info_hash, peer_client, peer_id, bitfield):
 
     try:
         peer_client.sendall(
@@ -32,6 +33,18 @@ def do_handshake(info_hash, peer_client, peer_id):
         if found_id:
             if found_id == peer_id:
                 peer_client.sendall(THIS_CLIENT_ID.encode())
+                if bitfield.count() > 0:
+                    peer_client.sendall(
+                        b"".join(
+                            [
+                                (1 + len(bitfield.tobytes())).to_bytes(
+                                    4, byteorder="big"
+                                ),
+                                (5).to_bytes(1, byteorder="big"),
+                                bitfield.tobytes(),
+                            ]
+                        )
+                    )
                 return True
 
         return False
@@ -40,7 +53,7 @@ def do_handshake(info_hash, peer_client, peer_id):
         return False
 
 
-def recv_handshake(info_hash, peer_client):
+def recv_handshake(info_hash, peer_client, bitfield):
     try:
         found_ihash, _ = parse_handshake(peer_client.recv(68))
 
@@ -56,6 +69,16 @@ def recv_handshake(info_hash, peer_client):
             )
 
             peer_id = peer_client.recv(20)
+            if bitfield.count() > 0:
+                peer_client.sendall(
+                    b"".join(
+                        [
+                            (1 + len(bitfield.tobytes())).to_bytes(4, byteorder="big"),
+                            (5).to_bytes(1, byteorder="big"),
+                            bitfield.tobytes(),
+                        ]
+                    )
+                )
             return peer_id.decode()
 
         return False

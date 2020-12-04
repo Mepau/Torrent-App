@@ -8,12 +8,15 @@ from torr_handshake import recv_handshake
 from constants import THIS_CLIENT_ID, PORT
 from bitarray import bitarray
 from peer_actions import retrv_peers, remove_peer, handle_req
+from piece_gen import pieces_gen, gen_block, piece_toblocks
+from torrent_parser import from_torrent
 
 PEER_ADDR = ("localhost", PORT)
 TORRENT_FILE = "./torrents/BACCHUS.torrent"
 # CLIENT_ID = "BACCHUS'S TORRCLIENT"
 # CLIENT_ID= "FSTSEEDER TORRCLIENT"
 CLIENT_ID = THIS_CLIENT_ID
+SEED_FILE = "./seed_file.pdf"
 KEEP_ALIVE_TIME = 120.0
 TIMEOUT_TIME = 140.0
 peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -21,13 +24,17 @@ peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 def run_client():
 
-    bencoder = bencodepy.Bencode()
-    bdencoded_torrent = bencoder.read(TORRENT_FILE)
-    pieces_hash = bdencoded_torrent[b"info"][b"pieces"]
-    pieces_amount = len(pieces_hash) // 20
-    bencoded_info = bencodepy.encode(bdencoded_torrent[b"info"])
+    (
+        announce_url,
+        single_file,
+        multi_files,
+        pieces_length,
+        pieces_amount,
+        pieces_hash,
+        bencoded_info,
+    ) = from_torrent(TORRENT_FILE)
+
     hashed_info = hashlib.sha1(bencoded_info).digest()
-    keepalive_time = time.time() + KEEP_ALIVE_TIME
 
     # Diccionario lista con el estado de cada conexion/peer
     pstatus_set = {}
@@ -40,17 +47,37 @@ def run_client():
     outputs = []
     request_qs = {}
 
+    client_bitfield = bitarray(pieces_amount, endian="big")
+    client_bitfield.setall(0)
+
+    if THIS_CLIENT_ID == "FSTSEEDER TORRCLIENT":
+        pieces, nhashed_pieces = pieces_gen(SEED_FILE)
+        stringed_hashes = b""
+        for hash in nhashed_pieces:
+            stringed_hashes = b"".join([stringed_hashes, hash])
+        print("Comprobando piezas")
+        if stringed_hashes == pieces_hash:
+            print("MATCH")
+            id_count = 0
+            for piece in pieces:
+                recv_pieces[id_count] = piece_toblocks(piece)
+                client_bitfield[id_count] = True
+                id_count += 1
+        else:
+            print("NO MATCH")
+
     retrv_peers(
-        bdencoded_torrent[b"announce"].decode(),
+        announce_url,
         hashed_info,
         inputs,
         outputs,
         pstatus_set,
         conns_ids,
+        client_bitfield,
     )
 
     print("Starting nodes")
-
+    keepalive_time = time.time() + KEEP_ALIVE_TIME
     while inputs:
         # Esperar por la llamada del SO cuando algun socket contenga data
         readable, writable, exceptional = select.select(inputs, outputs, inputs)
@@ -59,7 +86,7 @@ def run_client():
                 conn, addr = s.accept()
                 conn.settimeout(3)
                 try:
-                    peer_id = recv_handshake(hashed_info, conn)
+                    peer_id = recv_handshake(hashed_info, conn, client_bitfield)
                     if peer_id:
                         pstatus_set[peer_id] = {
                             "am_choking": True,
@@ -71,7 +98,6 @@ def run_client():
                             "bitfield": None,
                         }
                         conns_ids[conn] = peer_id
-
                         conn.setblocking(0)
                         inputs.append(conn)
                         outputs.append(conn)
@@ -85,7 +111,6 @@ def run_client():
                     data = s.recv(16384)
                     if data:
                         print(f"Mensaje recibido de {conns_ids[s]}: {data}")
-
                         handle_req(
                             data,
                             conns_ids[s],
@@ -93,7 +118,6 @@ def run_client():
                             pstatus_set,
                             recv_pieces,
                         )
-
                     else:
                         remove_peer(
                             s, inputs, outputs, pstatus_set, conns_ids, request_qs
