@@ -7,9 +7,10 @@ import time
 from torr_handshake import recv_handshake
 from constants import THIS_CLIENT_ID, PORT
 from bitarray import bitarray
-from peer_actions import retrv_peers, remove_peer, handle_req
+from peer_actions import PeerActions
 from piece_gen import pieces_gen, gen_block, piece_toblocks
 from torrent_parser import from_torrent
+from file_builder import FileBuilder
 
 PEER_ADDR = ("localhost", PORT)
 TORRENT_FILE = "./torrents/BACCHUS.torrent"
@@ -18,7 +19,7 @@ TORRENT_FILE = "./torrents/BACCHUS.torrent"
 CLIENT_ID = THIS_CLIENT_ID
 SEED_FILE = "./seed_file.pdf"
 KEEP_ALIVE_TIME = 120.0
-TIMEOUT_TIME = 140.0
+TIMEOUT_TIME = 180.0
 peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 
@@ -27,6 +28,7 @@ def run_client():
     (
         announce_url,
         single_file,
+        file_length,
         multi_files,
         pieces_length,
         pieces_amount,
@@ -66,13 +68,20 @@ def run_client():
         else:
             print("NO MATCH")
 
-    retrv_peers(
+    file_builder = FileBuilder(
+        client_bitfield,
+        single_file,
+        file_length,
+        multi_files,
+        pieces_length,
+        pieces_hash,
+    )
+
+    peer_actions = PeerActions(inputs, outputs, pstatus_set, conns_ids, file_builder)
+
+    peer_actions.retrv_peers(
         announce_url,
         hashed_info,
-        inputs,
-        outputs,
-        pstatus_set,
-        conns_ids,
         client_bitfield,
     )
 
@@ -111,31 +120,36 @@ def run_client():
                     data = s.recv(16384)
                     if data:
                         print(f"Mensaje recibido de {conns_ids[s]}: {data}")
-                        handle_req(
-                            data,
-                            conns_ids[s],
-                            request_qs,
-                            pstatus_set,
-                            recv_pieces,
-                        )
+                        peer_actions.handle_req(data, conns_ids[s], request_qs)
                     else:
-                        remove_peer(
-                            s, inputs, outputs, pstatus_set, conns_ids, request_qs
-                        )
+                        peer_actions.remove_peer(s, request_qs)
                 except socket.error as err:
                     print(err)
-                    remove_peer(s, inputs, outputs, pstatus_set, conns_ids, request_qs)
+                    peer_actions.remove_peer(s, request_qs)
 
         curr_time = time.time()
         for s in writable:
-            if curr_time >= keepalive_time:
-                print(f"Keeping alive {conns_ids[s]}")
-                s.sendall((0).to_bytes(4, "big"))
-                keepalive_time = time.time() + KEEP_ALIVE_TIME
 
-        # Casos de sockets con excepciones
+            try:
+                peer_id = conns_ids[s]
+
+                if not pstatus_set[peer_id]["peer_choking"]:
+
+                    pass
+                elif curr_time >= keepalive_time:
+                    print(f"Keeping alive {conns_ids[s]}")
+                    try:
+                        s.sendall((0).to_bytes(4, "big"))
+                        keepalive_time = time.time() + KEEP_ALIVE_TIME
+                    except socket.error as err:
+                        print(err)
+            except KeyError:
+                pass
+
+
+        # Casos de conexiones con excepciones
         for s in exceptional:
-            remove_peer(s, inputs, outputs, pstatus_set, conns_ids, request_qs)
+            peer_actions.remove_peer(s, request_qs)
 
         curr_time = time.time()
         for peer in list(pstatus_set.items()):
