@@ -106,7 +106,7 @@ def from_torrent(fpath):
     multi_files = bdencoded_torrent[b"info"].get(b"files")
     pieces_length = bdencoded_torrent[b"info"][b"piece length"]
     pieces_hash = bdencoded_torrent[b"info"][b"pieces"]
-    pieces_amount = len(pieces_hash) // 20
+    pieces_amount = -(-len(pieces_hash) // 20)
     bencoded_info = bencodepy.encode(bdencoded_torrent[b"info"])
     if single_file and not multi_files:
         return (

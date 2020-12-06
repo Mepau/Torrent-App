@@ -1,8 +1,7 @@
 import os
 import hashlib
 from torrent_parser import flatten_list, rread_dir
-
-DEF_PIECE_LENGTH = 524288
+from constants import DEF_BLOCK_LENGTH, DEF_PIECE_LENGTH
 
 
 def pieces_gen(fpath, piece_length=DEF_PIECE_LENGTH):
@@ -63,7 +62,7 @@ def pieces_gen(fpath, piece_length=DEF_PIECE_LENGTH):
     return pieces, pieces_hash
 
 
-def gen_block(piece, start_offset, block_length=16384):
+def gen_block(piece, start_offset, block_length=DEF_BLOCK_LENGTH):
 
     piece_length = len(piece)
 
@@ -73,13 +72,10 @@ def gen_block(piece, start_offset, block_length=16384):
         return piece[start_offset : start_offset + block_length]
 
 
-def piece_toblocks(piece, block_length=16384):
+def piece_toblocks(piece, block_length=DEF_BLOCK_LENGTH):
 
     blocks = [
-        {
-            "block_start": x - block_length,
-            "block": piece[x - block_length : x],
-        }
+        {"block_start": x, "block": piece[x : x + block_length], "length": block_length}
         for x in range(len(piece))
         if x % block_length == 0
     ]

@@ -20,10 +20,23 @@ CLIENT_ID = THIS_CLIENT_ID
 SEED_FILE = "./seed_file.pdf"
 KEEP_ALIVE_TIME = 120.0
 TIMEOUT_TIME = 180.0
+MAX_UPLOAD_PEER = 4
 peer_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 
 def run_client():
+
+    # Diccionario lista con el estado de cada conexion/peer
+    pstatus_set = {}
+    # Diccionario para rapida referencia entre conexion y peer_id
+    conns_ids = {}
+    recv_pieces = {}
+    # Socket que se esperan recibir data
+    inputs = [peer_service]
+    # Lista con socket de los demas nodos
+    outputs = []
+    request_qs = {}
+    upload_peers = 0
 
     (
         announce_url,
@@ -37,17 +50,6 @@ def run_client():
     ) = from_torrent(TORRENT_FILE)
 
     hashed_info = hashlib.sha1(bencoded_info).digest()
-
-    # Diccionario lista con el estado de cada conexion/peer
-    pstatus_set = {}
-    # Diccionario para rapida referencia entre conexion y peer_id
-    conns_ids = {}
-    recv_pieces = {}
-    # Socket que se esperan recibir data
-    inputs = [peer_service]
-    # Lista con socket de los demas nodos
-    outputs = []
-    request_qs = {}
 
     client_bitfield = bitarray(pieces_amount, endian="big")
     client_bitfield.setall(0)
@@ -127,25 +129,31 @@ def run_client():
                     print(err)
                     peer_actions.remove_peer(s, request_qs)
 
+        file_builder.check_4pieces()
         curr_time = time.time()
         for s in writable:
-
+            #Esto no deberia de manerjase asi
             try:
-                peer_id = conns_ids[s]
+                peer_id = conns_ids.get(s)
+                peer_bitfield = pstatus_set[peer_id].get("bitfield")
+                desired_pindex = peer_bitfield.index(True) if peer_bitfield else None
 
-                if not pstatus_set[peer_id]["peer_choking"]:
-
-                    pass
-                elif curr_time >= keepalive_time:
-                    print(f"Keeping alive {conns_ids[s]}")
-                    try:
-                        s.sendall((0).to_bytes(4, "big"))
-                        keepalive_time = time.time() + KEEP_ALIVE_TIME
-                    except socket.error as err:
-                        print(err)
-            except KeyError:
+                if peer_id:
+                    if not pstatus_set[peer_id]["am_interested"] and desired_pindex >= 0:
+                        s.sendall(b"%b%b" % ((1).to_bytes(4, "big"), (2).to_bytes(1, "big")))
+                        print(f"INTERESTED IN {peer_id}")
+                        pstatus_set[peer_id]["am_interested"] = True
+                    if not pstatus_set[peer_id]["peer_choking"]:
+                        pass
+                    elif curr_time >= keepalive_time:
+                        print(f"Keeping alive {conns_ids[s]}")
+                        try:
+                            s.sendall((0).to_bytes(4, "big"))
+                            keepalive_time = time.time() + KEEP_ALIVE_TIME
+                        except socket.error as err:
+                            print(err)
+            except:
                 pass
-
 
         # Casos de conexiones con excepciones
         for s in exceptional:
