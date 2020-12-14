@@ -2,6 +2,7 @@ import os
 import hashlib
 from torrent_parser import flatten_list, rread_dir
 from constants import DEF_BLOCK_LENGTH, DEF_PIECE_LENGTH
+import math
 
 
 def pieces_gen(fpath, piece_length=DEF_PIECE_LENGTH):
@@ -72,12 +73,39 @@ def gen_block(piece, start_offset, block_length=DEF_BLOCK_LENGTH):
         return piece[start_offset : start_offset + block_length]
 
 
-def piece_toblocks(piece, block_length=DEF_BLOCK_LENGTH):
+def piece_toblocks(piece: bytes, block_length=DEF_BLOCK_LENGTH):
 
-    blocks = [
-        {"block_start": x, "block": piece[x : x + block_length], "length": block_length}
-        for x in range(len(piece))
-        if x % block_length == 0
-    ]
+    piece_frac, piece_whole = math.modf(len(piece) / block_length)
+    if piece_frac:
+        lpiece_size = int(piece_frac * block_length)
+        blocks = [
+            {
+                "block_start": x,
+                "block": piece[x : x + block_length],
+                "length": block_length,
+            }
+            for x in range(len(piece) - lpiece_size)
+            if x % block_length == 0
+        ]
+        blocks.append(
+            {
+                "block_start": len(piece) - lpiece_size,
+                "block": piece[len(piece) - lpiece_size : len(piece)],
+                "length": lpiece_size,
+            }
+        )
+        print(f"Uttimo bloque de ultima pieza inicia {len(piece) - lpiece_size} tamaño:{lpiece_size}")
+        return blocks
+    else:
 
-    return blocks
+        blocks = [
+            {
+                "block_start": x,
+                "block": piece[x : x + block_length],
+                "length": block_length,
+            }
+            for x in range(len(piece))
+            if x % block_length == 0
+        ]
+
+        return blocks

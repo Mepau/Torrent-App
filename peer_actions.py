@@ -5,7 +5,7 @@ import socket
 import time
 import bencodepy
 from bitarray import bitarray
-from constants import THIS_CLIENT_ID, PORT
+from constants import THIS_CLIENT_ID, PORT, MAX_UPLOAD_PEERS
 from torr_handshake import do_handshake
 from file_builder import FileBuilder
 
@@ -38,12 +38,17 @@ class PeerActions:
         pstatus_set: dict,
         conns_ids: dict,
         file_builder: FileBuilder,
+        upload_peers: list,
+        request_qs: dict,
     ):
         self.inputs = inputs
         self.outputs = outputs
         self.pstatus_set = pstatus_set
         self.file_builder = file_builder
         self.conns_ids = conns_ids
+        self.upload_peers = upload_peers
+        self.request_qs = request_qs
+        
 
     def change_pstatus(self, len_prefix, msg_id, peer_id):
 
@@ -58,17 +63,26 @@ class PeerActions:
         elif len_prefix == 1 and msg_id == 2:
             self.pstatus_set[peer_id]["peer_interested"] = True
             self.pstatus_set[peer_id]["last_activity"] = time.time()
+            if peer_id not in self.upload_peers:
+                if len(self.upload_peers) <= MAX_UPLOAD_PEERS:
+                    self.upload_peers.append(peer_id)
+                    self.pstatus_set[peer_id].get("socket").sendall(
+                        b"%b%b" % ((1).to_bytes(4, "big"), (1).to_bytes(1, "big"))
+                    )
+                    self.pstatus_set[peer_id]["am_choking"] = False
         elif len_prefix == 1 and msg_id == 3:
             self.pstatus_set[peer_id]["peer_interested"] = False
             self.pstatus_set[peer_id]["last_activity"] = time.time()
 
-    def handle_req(self, data, peer_id, req_queue):
+    def handle_req(self, data, peer_id: str):
 
         # Manten conexion viva
         len_prefix = data[0:4]
         msg_id = data[4] if len(data) > 4 else []
         payload = data[5 : len(data)] if len(data) > 5 else []
         len_prefix = int.from_bytes(len_prefix, "big")
+        peer_socket = self.pstatus_set[peer_id]["socket"]
+
         # Mensaje recibido de peer por cambio de estado
         if len_prefix <= 1:
             self.change_pstatus(len_prefix, msg_id, peer_id)
@@ -80,37 +94,38 @@ class PeerActions:
             self.pstatus_set[peer_id]["last_activity"] = time.time()
             print(f"Bitfield {barray} de Peer {peer_id}")
         # Recepcion de mensaje de peer solicitando un bloque para pieza
-        elif msg_id == 6 and len_prefix == 13 and len(payload) == len_prefix:
-            piece_index = int.from_bytes(payload[0:4], endian="big")
-            block_start = int.from_bytes(payload[4:8], endian="big")
-            block_length = int.from_bytes(payload[8:12], endian="big")
+        elif msg_id == 6 and len_prefix == 13:
+            piece_index = int.from_bytes(payload[0:4], "big")
+            block_start = int.from_bytes(payload[4:8], "big")
+            block_length = int.from_bytes(payload[8:12], "big")
             # Cada request es insertado en una cola por cada peer
-            print(piece_index, block_start, block_length)
-            req_queue[self.pstatus_set[peer_id]["socket"]].append(
+            self.request_qs[peer_socket].append(
                 (piece_index, block_start, block_length)
             )
             self.pstatus_set[peer_id]["last_activity"] = time.time()
             print(f"Request recibido de Peer {peer_id}")
         # Recepcion de bloque solicitado a peer
-        elif msg_id == 7 and len_prefix > 9 and len(payload) == len_prefix:
-            piece_index = int.from_bytes(payload[0:4], endian="big")
-            block_start = int.from_bytes(payload[5:9], endian="big")
-            block = payload[9 : len(payload)]
+        elif msg_id == 7 and len_prefix > 9:
+
+            block = payload[8 : len(payload)]
+            piece_index = int.from_bytes(payload[0:4], "big")
+            block_start = int.from_bytes(payload[4:8], "big")
+
             self.file_builder.insert_block(piece_index, block_start, block)
             self.pstatus_set[peer_id]["last_activity"] = time.time()
             # Cada request es insertado en una cola por cada
             print(f"Bloque recibido de Peer {peer_id}")
         # Cancelar peticion de bloque
         elif msg_id == 8 and len_prefix == 13 and len(payload) == len_prefix:
-            piece_index = int.from_bytes(payload[0:4], endian="big")
-            block_start = int.from_bytes(payload[5:9], endian="big")
-            block_length = int.from_bytes(payload[9:13], endian="big")
+            piece_index = int.from_bytes(payload[0:4], "big")
+            block_start = int.from_bytes(payload[5:9], "big")
+            block_length = int.from_bytes(payload[9:13], "big")
             # Cada request es insertado en una cola por cada peer
-            if self.pstatus_set[peer_id]["socket"] in req_queue:
-                if (piece_index, block_start, block_length) in req_queue[
-                    self.pstatus_set[peer_id]["socket"]
+            if self.pstatus_set[peer_id]["socket"] in self.request_qs:
+                if (piece_index, block_start, block_length) in self.request_qs[
+                    peer_socket
                 ]:
-                    req_queue[self.pstatus_set[peer_id]["socket"]].remove(
+                    self.request_qs[peer_socket].remove(
                         (piece_index, block_start, block_length)
                     )
                     print(f"Peticion cancelada de Peer {peer_id}")
@@ -124,10 +139,8 @@ class PeerActions:
         if peers_list:
             print(f"Peers list {peers_list}")
             for peer in peers_list:
-                if (
-                    peer[b"peer_id"].decode() not in self.pstatus_set
-                    and peer[b"peer_id"].decode() != THIS_CLIENT_ID
-                ):
+                peer_id = peer[b"peer_id"].decode()
+                if peer_id not in self.pstatus_set and peer_id != THIS_CLIENT_ID:
                     new_peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     new_peer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     peer_address = (peer[b"ip"].decode(), int(peer[b"port"].decode()))
@@ -138,7 +151,7 @@ class PeerActions:
                         ):
                             self.inputs.append(new_peer)
                             self.outputs.append(new_peer)
-                            self.pstatus_set[peer[b"peer_id"].decode()] = {
+                            self.pstatus_set[peer_id] = {
                                 "am_choking": True,
                                 "am_interested": False,
                                 "peer_choking": True,
@@ -146,21 +159,28 @@ class PeerActions:
                                 "last_activity": time.time(),
                                 "socket": new_peer,
                             }
-                            self.conns_ids[new_peer] = peer[b"peer_id"].decode()
+                            self.conns_ids[new_peer] = peer_id
+                            self.request_qs[new_peer] = []
+
                             new_peer.setblocking(0)
                         else:
                             new_peer.close()
                     except socket.error as exc:
                         print(exc)
 
-    def remove_peer(self, sokt, request_qs):
+    def remove_peer(
+        self,
+        sokt,
+    ):
         self.inputs.remove(sokt)
         if sokt in self.outputs:
             self.outputs.remove(sokt)
         if self.conns_ids[sokt] in self.pstatus_set:
             self.pstatus_set.pop(self.conns_ids[sokt])
+        if self.conns_ids[sokt] in self.upload_peers:
+            self.upload_peers.remove(self.conns_ids[sokt])
         if sokt in self.conns_ids:
             self.conns_ids.pop(sokt)
-        if sokt in request_qs:
-            del request_qs[sokt]
+        if sokt in self.request_qs:
+            del self.request_qs[sokt]
         sokt.close()

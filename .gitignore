@@ -6,3 +6,5 @@ __pycache__/
 *.torrent
 test.*
 *.pdf
+constants.py
+downloaded/

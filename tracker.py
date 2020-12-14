@@ -15,7 +15,7 @@ ALLOWED_PEERS = 30
 INTERV_REQ = 30
 original_seeder = {
     "peer_id": "FSTSEEDER TORRCLIENT",
-    "ip": "127.0.0.1",
+    "ip": "localhost",
     "port": "9210",
 }
 listed_peers = [original_seeder]
